@@ -1,11 +1,7 @@
-use hecs::Entity;
+mod order;
+mod parent;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Parent {
-    pub entity: Entity,
-}
+pub mod events;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Order {
-    pub value: usize,
-}
+pub use order::Order;
+pub use parent::Parent;
