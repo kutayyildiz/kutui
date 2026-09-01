@@ -29,5 +29,7 @@ flake.lock
 .env.*
 /.direnv/
 
+# mdBook
+docs/book/
 
 rust-toolchain.toml

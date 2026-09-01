@@ -1,0 +1,16 @@
+[book]
+title = "kutui docs"
+authors = ["Kutay YILDIZ"]
+language = "en"
+src = "src"
+
+[rust]
+edition = "2024"
+
+[build]
+build-dir = "book"
+
+[output.html]
+default-theme = "navy"
+preferred-dark-theme = "navy"
+git-repository-url = "https://github.com/kutayyildiz/kutui"
