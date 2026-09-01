@@ -2,10 +2,11 @@ use hecs::{Entity, World};
 
 use crate::components::{
     Parent,
-    events::{ClearParent, SetParent},
+    events::{
+        parent::{ClearChildren, ClearParent, SetParent},
+    },
 };
 
-pub struct ParentingSystem;
 
 impl ParentingSystem {
     pub fn run(world: &mut World) {
