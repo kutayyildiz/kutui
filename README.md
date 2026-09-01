@@ -1,20 +1,22 @@
-# Project
+# KutUI
 
-A small, data-oriented library for organizing presentation state using an Entity Component System.
+KutUI is a data-oriented UI library built around an Entity Component System.
 
-The project models how content is organized, related, ordered, focused, and positioned without assuming what that content represents or how it is rendered.
+The core crate models presentation state such as hierarchy, ordering, focus, and
+positioning without depending on a specific renderer or platform.
 
-Rendering and platform-specific behavior are intentionally outside the scope of the core. Other systems can consume the resulting state and realize it however they need.
+Rendering and platform integration live outside the core crate, allowing
+adapters and renderers to build on the same core model.
 
-## Architecture
-
-The current source structure follows the main ECS categories:
+## Structure
 
 ```text
-src/
-├── entities/
-├── components/
-└── systems/
+crates/
+└── core/
+    └── src/
+        ├── components/
+        └── systems/
 ```
 
-This structure is intentionally simple and may be reorganized into higher-level domains as the project grows.
+The project is still experimental and the architecture may change as the library
+grows.
