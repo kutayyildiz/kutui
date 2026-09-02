@@ -1,4 +1,4 @@
-# Parenting System — Implementation Contract
+# Implementation Contract
 
 This document describes the intended code shape without prescribing low-level
 implementation details.

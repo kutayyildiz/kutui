@@ -1,4 +1,4 @@
-# Parenting System — Hierarchy Cache
+# Hierarchy Cache
 
 ## Authority
 

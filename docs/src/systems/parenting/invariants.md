@@ -1,4 +1,4 @@
-# Parenting System — Invariants
+# Invariants
 
 These rules are part of the parenting system contract.
 

@@ -1,4 +1,4 @@
-# Parenting System — Conflicts and Priority
+# Conflicts and Priority
 
 There are two different conflict classes.
 

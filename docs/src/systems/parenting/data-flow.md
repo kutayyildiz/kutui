@@ -1,4 +1,4 @@
-# Parenting System — Data Flow
+# Data Flow
 
 ## Internal State
 
