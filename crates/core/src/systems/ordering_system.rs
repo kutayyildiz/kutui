@@ -1,6 +1,6 @@
 use hecs::{Entity, World};
 
-use crate::components::{Order, events::order::SetOrder};
+use crate::components::{event::order::OrderEvent, state::order::Order};
 
 pub struct OrderingSystem;
 

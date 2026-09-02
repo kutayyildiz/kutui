@@ -12,14 +12,12 @@ use std::collections::{HashMap, HashSet};
 use hecs::{Entity, World};
 
 use crate::components::{
-    Parent,
-    events::{
-        destroy::PendingDestroy,
-        parent::{ClearChildren, ClearParent, SetParent},
-    },
+    event::parent::{ClearChildren, ClearParent, SetParent},
+    state::parent::Parent,
+    transient::destroy::PendingDestroy,
 };
 
-type Hierarchy = HashMap<Entity, HashSet<Entity>>;
+pub type Hierarchy = HashMap<Entity, HashSet<Entity>>;
 
 const PARENTING_PRIORITY: ParentingPriority = ParentingPriority::Clear;
 
