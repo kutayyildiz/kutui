@@ -7,8 +7,7 @@ use libfuzzer_sys::fuzz_target;
 use kutui_core::{
     Orchestrator,
     components::event::{
-        Event, destroy::DestroyRequest, focus::FocusRequest, order::OrderRequest,
-        parent::ParentRequest,
+        destroy::DestroyRequest, focus::FocusRequest, order::OrderRequest, parent::ParentRequest,
     },
 };
 
@@ -62,7 +61,7 @@ fn apply_operation(
                 return;
             };
 
-            world.spawn((Event, DestroyRequest { target }));
+            world.spawn((DestroyRequest { target },));
         }
 
         Operation::SetParent { target, parent } => {
@@ -74,7 +73,7 @@ fn apply_operation(
                 return;
             };
 
-            world.spawn((Event, ParentRequest::Set { target, parent }));
+            world.spawn((ParentRequest::Set { target, parent },));
         }
 
         Operation::ClearParent { target } => {
@@ -82,7 +81,7 @@ fn apply_operation(
                 return;
             };
 
-            world.spawn((Event, ParentRequest::Clear { target }));
+            world.spawn((ParentRequest::Clear { target },));
         }
 
         Operation::ClearChildren { target } => {
@@ -90,7 +89,7 @@ fn apply_operation(
                 return;
             };
 
-            world.spawn((Event, ParentRequest::ClearChildren { target }));
+            world.spawn((ParentRequest::ClearChildren { target },));
         }
 
         Operation::SetOrder { target, order } => {
@@ -98,13 +97,10 @@ fn apply_operation(
                 return;
             };
 
-            world.spawn((
-                Event,
-                OrderRequest::Set {
-                    target,
-                    order: usize::from(order),
-                },
-            ));
+            world.spawn((OrderRequest::Set {
+                target,
+                order: usize::from(order),
+            },));
         }
 
         Operation::IncrementOrder { target } => {
@@ -112,7 +108,7 @@ fn apply_operation(
                 return;
             };
 
-            world.spawn((Event, OrderRequest::Increment { target }));
+            world.spawn((OrderRequest::Increment { target },));
         }
 
         Operation::DecrementOrder { target } => {
@@ -120,7 +116,7 @@ fn apply_operation(
                 return;
             };
 
-            world.spawn((Event, OrderRequest::Decrement { target }));
+            world.spawn((OrderRequest::Decrement { target },));
         }
 
         Operation::Focus { target } => {
@@ -128,7 +124,7 @@ fn apply_operation(
                 return;
             };
 
-            world.spawn((Event, FocusRequest { target }));
+            world.spawn((FocusRequest { target },));
         }
 
         Operation::Run => {
