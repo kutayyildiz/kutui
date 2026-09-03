@@ -10,7 +10,7 @@
 - [x] **Focus** — Manage focused entities and remembered local focus.
 - [x] **Lifecycle** — Manage entity destruction and other lifecycle transitions
       without violating structural invariants.
-- [ ] **Orchestration** — Define the canonical system execution order, debug
+- [x] **Orchestration** — Define the canonical system execution order, debug
       validation boundaries, and transient cleanup.
 
 ## Interaction
