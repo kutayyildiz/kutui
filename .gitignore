@@ -19,17 +19,11 @@ Cargo.lock
 # temporary backups
 *.bak
 
-# Nix
-flake.nix
-flake.lock
-.envrc
-
-# Environment files
+# environment files
 .env
 .env.*
-/.direnv/
+!.env.example
+.direnv/
 
 # mdBook
 docs/book/
-
-rust-toolchain.toml
