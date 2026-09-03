@@ -12,9 +12,7 @@ use std::collections::{HashMap, HashSet};
 use hecs::{Entity, World};
 
 use crate::components::{
-    event::parent::{ClearChildren, ClearParent, SetParent},
-    state::parent::Parent,
-    transient::destroy::PendingDestroy,
+    event::parent::ParentRequest, state::parent::Parent, transient::destroy::PendingDestroy,
 };
 
 pub type Hierarchy = HashMap<Entity, HashSet<Entity>>;
@@ -84,17 +82,10 @@ impl ParentingSystem {
             hierarchy.entry(parent.0).or_default().insert(child);
         }
 
-        for parent in hierarchy.keys().copied() {
-            assert!(
-                world.contains(parent),
-                "hierarchy invariant violated: Parent references a missing entity"
-            );
-        }
-
         self.children_by_parent = Some(hierarchy);
     }
 
-    fn hierarchy(&self) -> &Hierarchy {
+    pub fn hierarchy(&self) -> &Hierarchy {
         self.children_by_parent
             .as_ref()
             .expect("parenting hierarchy must be initialized")
@@ -119,19 +110,20 @@ fn query_pending_destroy(world: &World) -> HashSet<Entity> {
 fn query_parenting_events(world: &World) -> CollectedParentingEvents {
     let mut collected = CollectedParentingEvents::default();
 
-    for (event_entity, event) in world.query::<(Entity, &SetParent)>().iter() {
+    for (event_entity, request) in world.query::<(Entity, &ParentRequest)>().iter() {
         collected.entities.push(event_entity);
-        collected.set_parent.push((event.target, event.parent));
-    }
 
-    for (event_entity, event) in world.query::<(Entity, &ClearParent)>().iter() {
-        collected.entities.push(event_entity);
-        collected.clear_parent.insert(event.target);
-    }
-
-    for (event_entity, event) in world.query::<(Entity, &ClearChildren)>().iter() {
-        collected.entities.push(event_entity);
-        collected.clear_children.insert(event.target);
+        match *request {
+            ParentRequest::Set { target, parent } => {
+                collected.set_parent.push((target, parent));
+            }
+            ParentRequest::Clear { target } => {
+                collected.clear_parent.insert(target);
+            }
+            ParentRequest::ClearChildren { target } => {
+                collected.clear_children.insert(target);
+            }
+        }
     }
 
     collected
@@ -237,23 +229,12 @@ fn remove_noops(world: &World, events: &mut ParentingEvents) {
         .clear_parent
         .retain(|child| world.get::<&Parent>(*child).is_ok());
 
-    events.set_parent.retain(|child, requested_parent| {
-        // Dev: Maybe use debug_assert! rather than assert!? Other assertions are ok within this
-        //      system since they do not have any performance penalty, but following 2 assertions seem extra.
-        debug_assert!(
-            world.contains(*child),
-            "parenting invariant violated: normalized SetParent target disappeared"
-        );
-        debug_assert!(
-            world.contains(*requested_parent),
-            "parenting invariant violated: normalized SetParent parent disappeared"
-        );
-
-        match world.get::<&Parent>(*child) {
+    events.set_parent.retain(
+        |child, requested_parent| match world.get::<&Parent>(*child) {
             Ok(current_parent) => current_parent.0 != *requested_parent,
             Err(_) => true,
-        }
-    });
+        },
+    );
 }
 
 // Dev: Why not use hecs::CommandBuffer ? It would be more efficient, no?
