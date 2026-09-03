@@ -88,10 +88,10 @@ fn normalize_children(world: &mut World, hierarchy: &Hierarchy, parent: Entity) 
         let parent_changed = world.get::<&ParentChanged>(child).is_ok();
         let order = world.get::<&Order>(child).ok().map(|order| order.0);
 
-        if parent_changed || order.is_none() {
-            appended.push(child);
+        if !parent_changed && let Some(order) = order {
+            existing.push((child, order));
         } else {
-            existing.push((child, order.unwrap()));
+            appended.push(child);
         }
     }
 

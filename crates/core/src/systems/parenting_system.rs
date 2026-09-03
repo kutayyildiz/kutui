@@ -108,7 +108,6 @@ fn query_pending_destroy(world: &World) -> HashSet<Entity> {
         .query::<Entity>()
         .with::<&PendingDestroy>()
         .iter()
-        .map(|entity| entity)
         .collect()
 }
 

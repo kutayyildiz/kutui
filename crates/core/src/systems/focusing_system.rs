@@ -94,10 +94,10 @@ fn repair_changed_parents(world: &mut World, hierarchy: &Hierarchy) {
         .collect::<Vec<_>>();
 
     for (entity, parent) in changed_unfocused {
-        if let Some(children) = hierarchy.get(&parent) {
-            if !children.iter().any(|child| has_focus(world, *child)) {
-                add_focus(world, entity);
-            }
+        if let Some(children) = hierarchy.get(&parent)
+            && !children.iter().any(|child| has_focus(world, *child))
+        {
+            add_focus(world, entity);
         }
     }
 }
