@@ -2,7 +2,7 @@
 
 ## Purpose
 
-`ParentingSystem` maintains generic parent-child relationships between entities.
+`ParentingSystem` maintains parent-child relationships between entities.
 
 `Parent` is the authoritative relationship state:
 
@@ -10,13 +10,19 @@
 child -> parent
 ```
 
-The system also maintains a derived reverse index:
+The system also maintains the derived reverse index:
 
 ```text
 parent -> { children }
 ```
 
-The reverse index exists for efficient parent-to-children lookup.
+represented by:
+
+```rust
+pub type Hierarchy = HashMap<Entity, HashSet<Entity>>;
+```
+
+`Hierarchy` exists for efficient parent-to-children lookup.
 
 ## State and Ownership
 
@@ -25,49 +31,48 @@ The reverse index exists for efficient parent-to-children lookup.
 ```text
 Parent
 Hierarchy
+ParentChanged
 ```
 
-where:
+Only `ParentingSystem` may add, modify, or remove `Parent`, modify `Hierarchy`,
+or produce `ParentChanged`.
 
-```rust
-pub type Hierarchy = HashMap<Entity, HashSet<Entity>>;
+The system reads:
+
+```text
+PendingDestroy
 ```
 
-Only `ParentingSystem` may add, change, or remove `Parent`, and only
-`ParentingSystem` may modify `Hierarchy`.
+and consumes:
 
-Other systems may read these values but must request relationship changes
-through `ParentRequest`.
+```text
+ParentRequest
+```
 
-Relationship changes are exposed to downstream systems through the transient
-`ParentChanged` component.
-
-`ParentingSystem` also reads `PendingDestroy` as a lifecycle constraint, but
-does not own or consume it.
+`PendingDestroy` is treated as a lifecycle constraint but is neither owned nor
+consumed by `ParentingSystem`.
 
 ## Invariants
 
 After `ParentingSystem` runs:
 
-* Every `Parent` edge has a matching edge in `Hierarchy`.
-* Every child in `Hierarchy` has the matching `Parent`.
+* `Parent` and `Hierarchy` describe the same relationships.
 * Every referenced parent exists.
 * `Hierarchy` contains no empty child groups.
-* No final parent relationship contains an entity that is `PendingDestroy`.
+* The parent graph contains no cycles.
+* No final parent relationship contains an entity with `PendingDestroy`.
 * Every `ParentChanged` represents an actual relationship change.
 * Only `ParentingSystem` modifies parenting state.
 
-A mismatch between `Parent` and `Hierarchy` is an invariant violation. Normal
-system operation does not attempt to repair arbitrary hierarchy corruption.
+`ParentingSystem` assumes parenting state is modified only through this system.
+
+It does not attempt to repair arbitrary external corruption.
 
 ## Structural Changes
 
-Whenever an entity's parent relationship changes, the resulting change is
-exposed through `ParentChanged`.
+Every actual parent relationship change produces `ParentChanged`.
 
-`ParentChanged::previous` contains the previous parent when one existed.
-
-Conceptually:
+`ParentChanged::previous` preserves the previous parent:
 
 ```text
 unparented -> P
@@ -80,23 +85,17 @@ P -> unparented
     previous = Some(P)
 ```
 
-A no-op relationship change such as:
+A no-op relationship change does not produce `ParentChanged`.
 
-```text
-P -> P
-```
-
-does not produce `ParentChanged`.
-
-`ParentChanged` is not consumed by `ParentingSystem`. It remains available to
-downstream systems until transient cleanup at the end of the orchestrator run.
+`ParentChanged` remains available to downstream systems until transient cleanup
+at the end of the orchestrator run.
 
 ### Destruction
 
-`PendingDestroy` is a hard constraint.
+`PendingDestroy` is a hard parenting constraint.
 
-An entity marked `PendingDestroy` may not remain an endpoint of a final
-parenting relationship.
+An entity marked `PendingDestroy` may not remain either a child or parent in the
+final hierarchy.
 
 For:
 
@@ -105,101 +104,82 @@ P -> D -> C
 PendingDestroy(D)
 ```
 
-the relationships involving `D` must disappear.
+both relationships involving `D` are removed.
 
-A surviving child may still be reparented away from the destroyed parent in the
+A surviving child may still be reparented away from a destroyed parent in the
 same run:
 
 ```text
 D -> C
 PendingDestroy(D)
-ParentRequest::Set { target: C, parent: Q }
+Set(C -> Q)
 
 -> C -> Q
 ```
 
-A parentable entity must remain alive until `ParentingSystem` has processed its
-`PendingDestroy` state.
+If that reparenting is rejected during later resolution, the child becomes
+parentless rather than remaining attached to the destroyed parent.
 
-Actual entity destruction belongs to lifecycle handling, not to
-`ParentingSystem`.
+Actual entity destruction belongs to lifecycle handling.
 
 ## Events
 
-`ParentingSystem` consumes `ParentRequest`.
+Parenting changes are requested through `ParentRequest`.
 
-The available requests are:
-
-```text
-ParentRequest::Set
-ParentRequest::Clear
-ParentRequest::ClearChildren
-```
-
-Every observed `ParentRequest` event entity is consumed after resolution,
-including requests that are invalid, duplicated, out-prioritized, no-ops, or
-successfully applied.
+Every observed parenting request event entity is consumed after resolution.
 
 ### Set
 
 ```text
-ParentRequest::Set { target, parent }
+Set(target, parent)
 ```
 
-A set request is discarded when:
+A set request is ignored when:
 
-* `target` does not exist.
-* `parent` does not exist.
-* `target` is `PendingDestroy`.
-* `parent` is `PendingDestroy`.
+* `target` does not exist;
+* `parent` does not exist;
+* `target` has `PendingDestroy`;
+* `parent` has `PendingDestroy`.
 
-When several valid `Set` requests target the same entity, the first one
-encountered survives.
+If several valid `Set` requests target the same entity, the first encountered
+survives.
 
 HECS query order is intentionally accepted as arbitrary.
+
+A surviving set is discarded if the resulting parent graph would be cyclic.
+
+Self-parenting is therefore rejected as a cycle.
 
 ### Clear
 
 ```text
-ParentRequest::Clear { target }
+Clear(target)
 ```
 
-Removes the target's current parent relationship when one exists.
+Removes the target's current parent when one exists.
 
-A clear targeting an already parentless entity becomes a no-op.
+Clearing an already parentless entity is a no-op.
 
 ### ClearChildren
 
 ```text
-ParentRequest::ClearChildren { target }
+ClearChildren(target)
 ```
 
-Clears both:
+Clears both the target's current children and surviving prospective children
+from `Set` requests targeting that parent.
 
-```text
-current children
-+
-surviving prospective children from ParentRequest::Set { parent: target, .. }
-```
-
-`ClearChildren` is lowered to per-child clear intent before normal conflict
-resolution.
+`ClearChildren` is lowered to ordinary per-child clear intent before normal
+conflict resolution.
 
 ### Conflict Resolution
 
-Destruction constraints are resolved before normal parenting priority:
+Destruction constraints are resolved before normal parenting priority.
 
-```text
-destruction constraints
-        ↓
-normal Set/Clear priority
-```
+A valid `Set` may reparent a surviving child away from an entity with
+`PendingDestroy`.
 
-A valid reparenting operation may move a surviving child away from a destroyed
-parent.
-
-After destruction conflicts are resolved, normal `Set` versus `Clear` conflicts
-use `PARENTING_PRIORITY`.
+Normal `Set` versus `Clear` conflicts use `PARENTING_PRIORITY`.
 
 The current policy is:
 
@@ -210,20 +190,23 @@ Clear
 so:
 
 ```text
-ParentRequest::Set { target: A, parent: P }
-ParentRequest::Clear { target: A }
+Set(A -> P)
+Clear(A)
 
 -> A becomes parentless
 ```
 
-No-op elimination happens only after conflict resolution so that no-op requests
-still retain their conflict intent while priority is being decided.
+No-op requests are removed only after conflict resolution so they retain their
+conflict intent while priority is being decided.
+
+After ordinary conflicts and no-ops are resolved, the complete planned parent
+graph is checked for cycles.
+
+Cyclic `Set` requests are discarded until the resulting graph is acyclic.
 
 ## System Order
 
-`ParentingSystem` is the first structural system.
-
-The canonical sequence begins:
+`ParentingSystem` runs before ordering and focusing:
 
 ```text
 ParentingSystem
@@ -231,10 +214,14 @@ ParentingSystem
 parenting validation
     ↓
 OrderingSystem
+    ↓
+ordering validation
+    ↓
+FocusingSystem
 ```
 
-Downstream systems may trust the validated parenting postconditions rather than
-revalidating hierarchy state themselves.
+It establishes the hierarchy postconditions required by downstream structural
+systems.
 
 ## Validation
 
@@ -247,25 +234,19 @@ It verifies:
 Parent -> Hierarchy
 Hierarchy -> Parent
 referenced parents exist
-Hierarchy contains no empty groups
-ParentChanged represents an actual relationship change
+no empty hierarchy groups
+no parent cycles
+valid ParentChanged state
 ```
 
-Validation is read-only.
-
-It detects invariant violations but never repairs state.
+Validation is read-only and never repairs state.
 
 ## Out of Scope
 
-`ParentingSystem` does not currently enforce:
+`ParentingSystem` does not define:
 
 ```text
-cycle detection
-self-parenting rejection
 hierarchy depth limits
 domain-specific parent/child kinds
 actual entity destruction
 ```
-
-These concerns may be layered on separately without changing the basic
-parenting model.

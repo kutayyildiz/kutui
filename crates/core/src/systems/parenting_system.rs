@@ -4,15 +4,17 @@
 //! system may modify hierarchy state or consume parenting event entities.
 //!
 //! `PendingDestroy` is treated as a hard constraint before normal parenting
-//! priority is resolved. Cycle detection, self-parenting validation, hierarchy
-//! depth limits, and parent/child kind validation are intentionally out of scope.
+//! priority is resolved. The resulting hierarchy is kept acyclic. Hierarchy
+//! depth limits and parent/child kind validation are intentionally out of scope.
 
 use std::collections::{HashMap, HashSet};
 
 use hecs::{Entity, World};
 
 use crate::components::{
-    event::parent::ParentRequest, state::parent::Parent, transient::destroy::PendingDestroy,
+    event::parent::ParentRequest,
+    state::parent::Parent,
+    transient::{destroy::PendingDestroy, parent::ParentChanged},
 };
 
 pub type Hierarchy = HashMap<Entity, HashSet<Entity>>;
@@ -59,12 +61,15 @@ impl ParentingSystem {
         let mut events = normalize_parenting_events(world, collected, &pending_destroy);
 
         let mut destroy_clears = build_destroy_clears(world, self.hierarchy(), &pending_destroy);
+
         resolve_destroy_conflicts(&events.set_parent, &mut destroy_clears);
 
         lower_clear_children(self.hierarchy(), &mut events);
         merge_destroy_clears(&mut events, destroy_clears);
         resolve_parenting_priority(&mut events, PARENTING_PRIORITY);
         remove_noops(world, &mut events);
+
+        remove_cyclic_sets(world, &mut events, &pending_destroy);
 
         apply_parenting_events(world, self.hierarchy_mut(), &events);
         cleanup_hierarchy(self.hierarchy_mut());
@@ -137,17 +142,15 @@ fn normalize_parenting_events(
     let mut set_parent = HashMap::new();
 
     for (child, parent) in collected.set_parent {
-        if !world.contains(child) || !world.contains(parent) {
-            continue;
+        if world.contains(child)
+            && world.contains(parent)
+            && !pending_destroy.contains(&child)
+            && !pending_destroy.contains(&parent)
+        {
+            // HECS query order is arbitrary by design. The first valid request
+            // encountered for a child survives; later requests are discarded.
+            set_parent.entry(child).or_insert(parent);
         }
-
-        if pending_destroy.contains(&child) || pending_destroy.contains(&parent) {
-            continue;
-        }
-
-        // HECS query order is arbitrary by design. The first valid request
-        // encountered for a child survives; later requests are discarded.
-        set_parent.entry(child).or_insert(parent);
     }
 
     ParentingEvents {
@@ -237,10 +240,9 @@ fn remove_noops(world: &World, events: &mut ParentingEvents) {
     );
 }
 
-// Dev: Why not use hecs::CommandBuffer ? It would be more efficient, no?
 fn apply_parenting_events(world: &mut World, hierarchy: &mut Hierarchy, events: &ParentingEvents) {
     for &child in &events.clear_parent {
-        let parent = world
+        let previous_parent = world
             .get::<&Parent>(child)
             .expect("parenting invariant violated: clear target lost its Parent")
             .0;
@@ -249,21 +251,40 @@ fn apply_parenting_events(world: &mut World, hierarchy: &mut Hierarchy, events: 
             .remove_one::<Parent>(child)
             .expect("parenting invariant violated: failed to remove Parent");
 
-        remove_hierarchy_edge(hierarchy, parent, child);
+        world
+            .insert_one(
+                child,
+                ParentChanged {
+                    previous: Some(previous_parent),
+                },
+            )
+            .expect("parenting invariant violated: failed to record ParentChanged");
+
+        remove_hierarchy_edge(hierarchy, previous_parent, child);
     }
 
     for (&child, &new_parent) in &events.set_parent {
-        let old_parent = world.get::<&Parent>(child).ok().map(|parent| parent.0);
+        let previous_parent = world.get::<&Parent>(child).ok().map(|parent| parent.0);
 
-        if let Some(old_parent) = old_parent {
-            remove_hierarchy_edge(hierarchy, old_parent, child);
+        if let Some(previous_parent) = previous_parent {
+            remove_hierarchy_edge(hierarchy, previous_parent, child);
         }
 
         world
             .insert_one(child, Parent(new_parent))
             .expect("parenting invariant violated: SetParent target disappeared");
 
+        world
+            .insert_one(
+                child,
+                ParentChanged {
+                    previous: previous_parent,
+                },
+            )
+            .expect("parenting invariant violated: failed to record ParentChanged");
+
         let inserted = hierarchy.entry(new_parent).or_default().insert(child);
+
         assert!(
             inserted,
             "hierarchy invariant violated: new parent already contained child"
@@ -292,4 +313,70 @@ fn consume_parenting_events(world: &mut World, entities: Vec<Entity>) {
             .despawn(entity)
             .expect("parenting invariant violated: parenting event entity disappeared");
     }
+}
+
+fn remove_cyclic_sets(
+    world: &World,
+    events: &mut ParentingEvents,
+    pending_destroy: &HashSet<Entity>,
+) {
+    let mut planned = world
+        .query::<(Entity, &Parent)>()
+        .iter()
+        .map(|(child, parent)| (child, parent.0))
+        .collect::<HashMap<_, _>>();
+
+    // Apply planned clears first.
+    for child in &events.clear_parent {
+        planned.remove(child);
+    }
+
+    // Assume every surviving SetParent succeeds.
+    for (&child, &parent) in &events.set_parent {
+        planned.insert(child, parent);
+    }
+
+    // Reject one cyclic SetParent at a time until the planned graph is acyclic.
+    while let Some(child) = find_cyclic_set(&planned, &events.set_parent) {
+        events.set_parent.remove(&child);
+
+        if let Ok(parent) = world.get::<&Parent>(child) {
+            if pending_destroy.contains(&parent.0) {
+                planned.remove(&child);
+                events.clear_parent.insert(child);
+            } else {
+                planned.insert(child, parent.0);
+            }
+        } else {
+            planned.remove(&child);
+        }
+    }
+}
+
+fn find_cyclic_set(
+    planned: &HashMap<Entity, Entity>,
+    set_parent: &HashMap<Entity, Entity>,
+) -> Option<Entity> {
+    set_parent
+        .keys()
+        .copied()
+        .find(|&child| is_cyclic(planned, child))
+}
+
+fn is_cyclic(planned: &HashMap<Entity, Entity>, child: Entity) -> bool {
+    let mut current = child;
+
+    for _ in 0..=planned.len() {
+        let Some(&parent) = planned.get(&current) else {
+            return false;
+        };
+
+        if parent == child {
+            return true;
+        }
+
+        current = parent;
+    }
+
+    true
 }
