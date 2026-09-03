@@ -180,45 +180,43 @@ fn move_to_index(
 }
 
 fn set_order(world: &World, hierarchy: &Hierarchy, target: Entity, requested: usize) {
-    let (siblings, current_order) = ordering_context(world, hierarchy, target);
-    let destination = requested.min(siblings.len() - 1);
+    if let Some((siblings, current_order)) = ordering_context(world, hierarchy, target) {
+        let destination = requested.min(siblings.len() - 1);
 
-    move_to_index(world, siblings, target, current_order, destination);
+        move_to_index(world, siblings, target, current_order, destination);
+    }
 }
 
 fn increment_order(world: &World, hierarchy: &Hierarchy, target: Entity) {
-    let (siblings, current_order) = ordering_context(world, hierarchy, target);
+    if let Some((siblings, current_order)) = ordering_context(world, hierarchy, target) {
+        let destination = if current_order == siblings.len() - 1 {
+            0
+        } else {
+            current_order + 1
+        };
 
-    let destination = if current_order == siblings.len() - 1 {
-        0
-    } else {
-        current_order + 1
-    };
-
-    move_to_index(world, siblings, target, current_order, destination);
+        move_to_index(world, siblings, target, current_order, destination);
+    }
 }
 
 fn decrement_order(world: &World, hierarchy: &Hierarchy, target: Entity) {
-    let (siblings, current_order) = ordering_context(world, hierarchy, target);
+    if let Some((siblings, current_order)) = ordering_context(world, hierarchy, target) {
+        let destination = if current_order == 0 {
+            siblings.len() - 1
+        } else {
+            current_order - 1
+        };
 
-    let destination = if current_order == 0 {
-        siblings.len() - 1
-    } else {
-        current_order - 1
-    };
-
-    move_to_index(world, siblings, target, current_order, destination);
+        move_to_index(world, siblings, target, current_order, destination);
+    }
 }
 
 fn ordering_context<'a>(
     world: &World,
     hierarchy: &'a Hierarchy,
     target: Entity,
-) -> (&'a HashSet<Entity>, usize) {
-    let parent = world
-        .get::<&Parent>(target)
-        .expect("ordering invariant violated: ordering target has no Parent")
-        .0;
+) -> Option<(&'a HashSet<Entity>, usize)> {
+    let parent = world.get::<&Parent>(target).ok()?.0;
 
     let siblings = hierarchy
         .get(&parent)
@@ -229,5 +227,5 @@ fn ordering_context<'a>(
         .expect("ordering invariant violated: ordering target has no Order")
         .0;
 
-    (siblings, current_order)
+    Some((siblings, current_order))
 }
