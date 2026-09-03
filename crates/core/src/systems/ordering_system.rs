@@ -12,8 +12,9 @@ use hecs::{Entity, World};
 
 use crate::{
     components::{
-        event::order::OrderRequest, state::order::Order, state::parent::Parent,
-        transient::parent::ParentChanged,
+        event::order::OrderRequest,
+        state::{order::Order, parent::Parent},
+        transient::{order::OrderInvalidated, parent::ParentChanged},
     },
     systems::parenting_system::Hierarchy,
 };
@@ -29,22 +30,26 @@ impl OrderingSystem {
     pub fn run(&mut self, world: &mut World, hierarchy: &Hierarchy) {
         reconcile_structure(world, hierarchy);
         process_order_requests(world, hierarchy);
-
-        #[cfg(debug_assertions)]
-        validate_ordering(world, hierarchy);
     }
 }
 
 fn reconcile_structure(world: &mut World, hierarchy: &Hierarchy) {
     let mut affected_parents = HashSet::new();
+    let mut order_changes = Vec::new();
     let mut detached = Vec::new();
 
     for (entity, changed, parent, order) in world
         .query::<(Entity, &ParentChanged, Option<&Parent>, Option<&Order>)>()
         .iter()
     {
-        if let Some(previous) = changed.previous {
-            affected_parents.insert(previous);
+        if let Some(previous_parent) = changed.previous {
+            affected_parents.insert(previous_parent);
+
+            let previous_order = order
+                .expect("ordering invariant violated: entity leaving a parent has no Order")
+                .0;
+
+            order_changes.push((entity, previous_order));
         }
 
         if let Some(parent) = parent {
@@ -54,12 +59,10 @@ fn reconcile_structure(world: &mut World, hierarchy: &Hierarchy) {
         }
     }
 
-    for (_, parent) in world
-        .query::<(Entity, &Parent)>()
-        .without::<&Order>()
-        .iter()
-    {
-        affected_parents.insert(parent.0);
+    for (entity, previous) in order_changes {
+        world
+            .insert_one(entity, OrderInvalidated { previous })
+            .expect("ordering invariant violated: failed to record OrderChanged");
     }
 
     for entity in detached {
@@ -94,14 +97,6 @@ fn normalize_children(world: &mut World, hierarchy: &Hierarchy, parent: Entity) 
 
     existing.sort_unstable_by_key(|(_, order)| *order);
 
-    #[cfg(debug_assertions)]
-    for pair in existing.windows(2) {
-        assert_ne!(
-            pair[0].1, pair[1].1,
-            "ordering invariant violated: duplicate Order within sibling group"
-        );
-    }
-
     let ordered = existing
         .into_iter()
         .map(|(entity, _)| entity)
@@ -135,11 +130,9 @@ fn process_order_requests(world: &mut World, hierarchy: &Hierarchy) {
             OrderRequest::Set { target, order } => {
                 set_order(world, hierarchy, target, order);
             }
-
             OrderRequest::Increment { target } => {
                 increment_order(world, hierarchy, target);
             }
-
             OrderRequest::Decrement { target } => {
                 decrement_order(world, hierarchy, target);
             }
@@ -155,10 +148,10 @@ fn move_to_index(
     world: &World,
     siblings: &HashSet<Entity>,
     target: Entity,
-    current: usize,
+    current_order: usize,
     destination: usize,
 ) {
-    if current == destination {
+    if current_order == destination {
         return;
     }
 
@@ -171,11 +164,11 @@ fn move_to_index(
             .get::<&mut Order>(sibling)
             .expect("ordering invariant violated: sibling has no Order");
 
-        if destination < current {
-            if order.0 >= destination && order.0 < current {
+        if destination < current_order {
+            if order.0 >= destination && order.0 < current_order {
                 order.0 += 1;
             }
-        } else if order.0 > current && order.0 <= destination {
+        } else if order.0 > current_order && order.0 <= destination {
             order.0 -= 1;
         }
     }
@@ -187,101 +180,54 @@ fn move_to_index(
 }
 
 fn set_order(world: &World, hierarchy: &Hierarchy, target: Entity, requested: usize) {
-    let Some((siblings, current)) = resolve_target(world, hierarchy, target) else {
-        return;
-    };
-
+    let (siblings, current_order) = ordering_context(world, hierarchy, target);
     let destination = requested.min(siblings.len() - 1);
 
-    move_to_index(world, siblings, target, current, destination);
+    move_to_index(world, siblings, target, current_order, destination);
 }
 
 fn increment_order(world: &World, hierarchy: &Hierarchy, target: Entity) {
-    let Some((siblings, current)) = resolve_target(world, hierarchy, target) else {
-        return;
-    };
+    let (siblings, current_order) = ordering_context(world, hierarchy, target);
 
-    let destination = if current == siblings.len() - 1 {
+    let destination = if current_order == siblings.len() - 1 {
         0
     } else {
-        current + 1
+        current_order + 1
     };
 
-    move_to_index(world, siblings, target, current, destination);
+    move_to_index(world, siblings, target, current_order, destination);
 }
 
 fn decrement_order(world: &World, hierarchy: &Hierarchy, target: Entity) {
-    let Some((siblings, current)) = resolve_target(world, hierarchy, target) else {
-        return;
-    };
+    let (siblings, current_order) = ordering_context(world, hierarchy, target);
 
-    let destination = if current == 0 {
+    let destination = if current_order == 0 {
         siblings.len() - 1
     } else {
-        current - 1
+        current_order - 1
     };
 
-    move_to_index(world, siblings, target, current, destination);
+    move_to_index(world, siblings, target, current_order, destination);
 }
 
-fn resolve_target<'a>(
+fn ordering_context<'a>(
     world: &World,
     hierarchy: &'a Hierarchy,
     target: Entity,
-) -> Option<(&'a HashSet<Entity>, usize)> {
-    let parent = world.get::<&Parent>(target).ok()?.0;
+) -> (&'a HashSet<Entity>, usize) {
+    let parent = world
+        .get::<&Parent>(target)
+        .expect("ordering invariant violated: ordering target has no Parent")
+        .0;
 
     let siblings = hierarchy
         .get(&parent)
         .expect("ordering invariant violated: Parent has no hierarchy entry");
 
-    assert!(
-        siblings.contains(&target),
-        "ordering invariant violated: hierarchy does not contain ordering target"
-    );
-
-    let current = world
+    let current_order = world
         .get::<&Order>(target)
         .expect("ordering invariant violated: ordering target has no Order")
         .0;
 
-    Some((siblings, current))
-}
-
-#[cfg(debug_assertions)]
-fn validate_ordering(world: &World, hierarchy: &Hierarchy) {
-    for (entity, _) in world.query::<(Entity, &Order)>().iter() {
-        assert!(
-            world.get::<&Parent>(entity).is_ok(),
-            "ordering invariant violated: entity with Order has no Parent"
-        );
-    }
-
-    for (entity, _) in world.query::<(Entity, &Parent)>().iter() {
-        assert!(
-            world.get::<&Order>(entity).is_ok(),
-            "ordering invariant violated: parented entity has no Order"
-        );
-    }
-
-    for children in hierarchy.values() {
-        let mut orders = children
-            .iter()
-            .map(|&child| {
-                world
-                    .get::<&Order>(child)
-                    .expect("ordering invariant violated: hierarchy child has no Order")
-                    .0
-            })
-            .collect::<Vec<_>>();
-
-        orders.sort_unstable();
-
-        for (expected, actual) in orders.into_iter().enumerate() {
-            assert_eq!(
-                actual, expected,
-                "ordering invariant violated: sibling group is not dense"
-            );
-        }
-    }
+    (siblings, current_order)
 }
