@@ -62,7 +62,7 @@ fn reconcile_structure(world: &mut World, hierarchy: &Hierarchy) {
     for (entity, previous) in order_changes {
         world
             .insert_one(entity, OrderInvalidated { previous })
-            .expect("ordering invariant violated: failed to record OrderChanged");
+            .expect("ordering invariant violated: failed to record OrderInvalidated");
     }
 
     for entity in detached {

@@ -2,8 +2,8 @@
 
 KutUI is a data-oriented UI library built around an Entity Component System.
 
-The core crate models presentation state such as hierarchy, ordering, focus, and
-positioning without depending on a specific renderer or platform.
+The core crate models generic presentation state such as hierarchy, ordering,
+focus, and lifecycle without depending on a specific renderer or platform.
 
 Rendering and platform integration live outside the core crate, allowing
 adapters and renderers to build on the same core model.

@@ -15,16 +15,28 @@ The core uses small systems with clear ownership and explicit dependencies.
 The canonical execution order is:
 
 ```text
+DestroySystem::prepare
+        ↓
 ParentingSystem
-    ↓
+        ↓
 OrderingSystem
-    ↓
+        ↓
 FocusingSystem
+        ↓
+DestroySystem::finalize
+        ↓
+transient cleanup
 ```
 
 Each system may rely on the invariants established by the systems before it.
 
 In debug builds, each system is validated immediately after it runs.
+
+## Dependency Chain
+
+```text
+Parenting → Ordering → Focusing
+```
 
 ## Design
 
@@ -37,3 +49,11 @@ Systems:
 
 Detailed behavior and invariants are documented in the individual system
 documents above.
+
+## Requests
+
+Changes are submitted by spawning temporary entities containing request
+components. A system consumes the requests it owns and despawns their request
+entities after processing.
+
+Request components therefore belong on dedicated disposable entities.

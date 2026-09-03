@@ -33,7 +33,7 @@ Parent
 Hierarchy
 Order
 ParentChanged
-OrderChanged
+OrderInvalidated
 ```
 
 and consumes:
@@ -72,7 +72,7 @@ The system uses:
 
 ```text
 ParentChanged::previous
-OrderChanged::previous
+OrderInvalidated::previous
 ```
 
 to preserve the old parent and old sibling position.
@@ -111,7 +111,7 @@ A(0) C(1) D(2)
 With:
 
 ```text
-B.OrderChanged.previous = 1
+B.OrderInvalidated.previous = 1
 ```
 
 focus becomes:

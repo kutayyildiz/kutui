@@ -9,6 +9,11 @@
       url = "github:oxalica/rust-overlay";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+
+    git-hooks = {
+      url = "github:cachix/git-hooks.nix";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
   outputs =
@@ -16,6 +21,7 @@
       nixpkgs,
       systems,
       rust-overlay,
+      git-hooks,
       ...
     }:
     let
@@ -34,12 +40,66 @@
           };
 
           rustToolchain = pkgs.rust-bin.fromRustupToolchainFile ./rust-toolchain.toml;
+
+          gitHooks = git-hooks.lib.${system}.run {
+            src = ./.;
+
+            package = pkgs.prek;
+
+            default_stages = [ "pre-push" ];
+
+            hooks = {
+              rustfmt = {
+                enable = true;
+                priority = 10;
+
+                settings.check = true;
+
+                packageOverrides = {
+                  cargo = rustToolchain;
+                  rustfmt = rustToolchain;
+                };
+              };
+
+              clippy = {
+                enable = true;
+                priority = 20;
+                always_run = true;
+
+                settings = {
+                  allFeatures = true;
+                  denyWarnings = true;
+                  offline = false;
+                  extraArgs = "--workspace --all-targets";
+                };
+
+                packageOverrides = {
+                  cargo = rustToolchain;
+                  clippy = rustToolchain;
+                };
+              };
+
+              tests = {
+                enable = true;
+                name = "cargo test";
+                priority = 30;
+                always_run = true;
+
+                entry = "${rustToolchain}/bin/cargo test --workspace --all-features";
+
+                pass_filenames = false;
+              };
+            };
+          };
         in
         {
           default = pkgs.mkShell {
             packages = [
               rustToolchain
-            ];
+            ]
+            ++ gitHooks.enabledPackages;
+
+            inherit (gitHooks) shellHook;
 
             RUST_BACKTRACE = "1";
           };
