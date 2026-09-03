@@ -1,0 +1,27 @@
+[package]
+name = "kutui-core-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2024"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = { version = "0.4", features = ["arbitrary-derive"] }
+arbitrary = { version = "1", features = ["derive"] }
+hecs = "0.11.1"
+
+[dependencies.kutui-core]
+path = ".."
+
+# Use independent workspace for fuzzers
+[workspace]
+members = ["."]
+
+[[bin]]
+name = "orchestrator"
+path = "fuzz_targets/orchestrator.rs"
+test = false
+doc = false
+bench = false
