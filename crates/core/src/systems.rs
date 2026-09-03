@@ -1,3 +1,4 @@
+pub mod destroy_system;
 pub mod focusing_system;
 pub mod ordering_system;
 pub mod parenting_system;

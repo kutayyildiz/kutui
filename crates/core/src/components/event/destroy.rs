@@ -1,5 +1,5 @@
 use hecs::Entity;
 
-pub struct DestroyEntity {
+pub struct DestroyRequest {
     pub target: Entity,
 }
