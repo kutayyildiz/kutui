@@ -168,7 +168,6 @@ fn build_destroy_clears(
     let mut clears = HashSet::new();
 
     for &entity in pending_destroy {
-        // Dev: this can also be done with an additional single hecs query: Parent && PendingDestroy. Decide which is cleaner/efficient.
         if world.get::<&Parent>(entity).is_ok() {
             clears.insert(entity);
         }
@@ -359,13 +358,13 @@ fn find_cyclic_set(
     set_parent
         .keys()
         .copied()
-        .find(|&child| is_cyclic(planned, child))
+        .find(|&child| is_in_cycle(planned, child))
 }
 
-fn is_cyclic(planned: &HashMap<Entity, Entity>, child: Entity) -> bool {
+fn is_in_cycle(planned: &HashMap<Entity, Entity>, child: Entity) -> bool {
     let mut current = child;
 
-    for _ in 0..=planned.len() {
+    for _ in 0..planned.len() {
         let Some(&parent) = planned.get(&current) else {
             return false;
         };
@@ -377,5 +376,5 @@ fn is_cyclic(planned: &HashMap<Entity, Entity>, child: Entity) -> bool {
         current = parent;
     }
 
-    true
+    false
 }
