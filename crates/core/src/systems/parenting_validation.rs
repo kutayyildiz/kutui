@@ -5,7 +5,10 @@ use std::collections::HashMap;
 use hecs::{Entity, World};
 
 use crate::{
-    components::{state::parent::Parent, transient::parent::ParentChanged},
+    components::{
+        state::parent::Parent,
+        transient::{destroy::PendingDestroy, parent::ParentChanged},
+    },
     systems::parenting_system::Hierarchy,
 };
 
@@ -19,6 +22,7 @@ pub(crate) fn validate(world: &World, hierarchy: &Hierarchy) {
     validate_parent_components(world, hierarchy);
     validate_hierarchy(world, hierarchy);
     validate_parent_changes(world);
+    validate_no_pending_destroy_relationships(world);
     validate_no_cycles(world);
 }
 
@@ -64,6 +68,7 @@ fn validate_hierarchy(world: &World, hierarchy: &Hierarchy) {
         }
     }
 }
+
 fn validate_parent_changes(world: &World) {
     for (_, changed, parent) in world
         .query::<(Entity, &ParentChanged, Option<&Parent>)>()
@@ -74,6 +79,20 @@ fn validate_parent_changes(world: &World) {
         assert_ne!(
             changed.previous, current,
             "parenting invariant violated: ParentChanged does not represent a change"
+        );
+    }
+}
+
+fn validate_no_pending_destroy_relationships(world: &World) {
+    for (child, parent) in world.query::<(Entity, &Parent)>().iter() {
+        assert!(
+            world.get::<&PendingDestroy>(child).is_err(),
+            "parenting invariant violated: PendingDestroy entity remains parented"
+        );
+
+        assert!(
+            world.get::<&PendingDestroy>(parent.0).is_err(),
+            "parenting invariant violated: entity remains parented to PendingDestroy entity"
         );
     }
 }

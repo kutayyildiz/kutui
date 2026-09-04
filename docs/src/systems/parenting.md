@@ -235,6 +235,7 @@ Parent -> Hierarchy
 Hierarchy -> Parent
 referenced parents exist
 no empty hierarchy groups
+no PendingDestroy parent relationships
 no parent cycles
 valid ParentChanged state
 ```
